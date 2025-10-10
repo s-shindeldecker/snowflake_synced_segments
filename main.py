@@ -70,7 +70,7 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
         ld_url = f"https://app.launchdarkly.com/api/v2/segments/{LD_PROJECT_KEY}/{LD_ENV_KEY}/{segment_key}/sync"
         
         headers = {
-            "Authorization": f"Bearer {LD_API_KEY}",
+            "Authorization": f"{LD_API_KEY}",
             "Content-Type": "application/json",
             "LD-API-Version": "beta"
         }
@@ -169,7 +169,7 @@ async def list_segments():
         # Get segments from LaunchDarkly
         ld_url = f"https://app.launchdarkly.com/api/v2/segments/{LD_PROJECT_KEY}/{LD_ENV_KEY}"
         headers = {
-            "Authorization": f"Bearer {LD_API_KEY}",
+            "Authorization": f"{LD_API_KEY}",
             "Content-Type": "application/json",
             "LD-API-Version": "beta"
         }
