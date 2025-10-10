@@ -44,8 +44,8 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
     """
     try:
         # Validate input
-        if not request.audience:
-            raise HTTPException(status_code=400, detail="audience field is required")
+        if not request.audience or not request.audience.strip():
+            raise HTTPException(status_code=400, detail="audience field is required and cannot be empty")
         
         if not isinstance(request.included, list):
             raise HTTPException(status_code=400, detail="included must be a list")
@@ -56,8 +56,15 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
         if not isinstance(request.version, int) or request.version < 1:
             raise HTTPException(status_code=400, detail="version must be a positive integer")
         
-        # Use the segment key from the request payload
-        segment_key = request.audience
+        # Validate segment key format (basic validation)
+        segment_key = request.audience.strip()
+        if not segment_key.replace('-', '').replace('_', '').isalnum():
+            raise HTTPException(
+                status_code=400, 
+                detail="audience (segment key) must contain only alphanumeric characters, hyphens, and underscores"
+            )
+        
+        # segment_key is already set from validation above
         
         # Prepare LaunchDarkly API call
         ld_url = f"https://app.launchdarkly.com/api/v2/segments/{LD_PROJECT_KEY}/{LD_ENV_KEY}/{segment_key}/sync"
@@ -103,9 +110,27 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
                 logger.info(f"Successfully synced segment {segment_key} to LaunchDarkly")
                 return SyncResponse(
                     status="ok",
-                    ld_response="Segment updated",
+                    ld_response="Segment updated successfully",
                     count_included=len(request.included),
                     count_excluded=len(request.excluded)
+                )
+            elif response.status_code == 404:
+                logger.error(f"Segment not found: {segment_key}")
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Segment '{segment_key}' not found in LaunchDarkly project '{LD_PROJECT_KEY}'"
+                )
+            elif response.status_code == 401:
+                logger.error(f"Unauthorized: Invalid API key or insufficient permissions")
+                raise HTTPException(
+                    status_code=401, 
+                    detail="Unauthorized: Invalid LaunchDarkly API key or insufficient permissions"
+                )
+            elif response.status_code == 403:
+                logger.error(f"Forbidden: API key lacks required permissions")
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Forbidden: API key lacks required permissions for this operation"
                 )
             else:
                 logger.error(f"LaunchDarkly API error: {response.status_code} - {response.text}")
@@ -127,6 +152,49 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "snowflake-ld-sync"}
 
+@app.get("/api/segments")
+async def list_segments():
+    """
+    List available segments in LaunchDarkly project
+    This is helpful for debugging and finding valid segment keys
+    """
+    if not all([LD_API_KEY, LD_PROJECT_KEY, LD_ENV_KEY]):
+        return {
+            "error": "LaunchDarkly credentials not configured",
+            "message": "Set LD_API_KEY, LD_PROJECT_KEY, and LD_ENV_KEY environment variables"
+        }
+    
+    try:
+        # Get segments from LaunchDarkly
+        ld_url = f"https://app.launchdarkly.com/api/v2/segments/{LD_PROJECT_KEY}/{LD_ENV_KEY}"
+        headers = {
+            "Authorization": f"api-key {LD_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(ld_url, headers=headers)
+            
+            if response.status_code == 200:
+                segments = response.json()
+                return {
+                    "status": "ok",
+                    "project": LD_PROJECT_KEY,
+                    "environment": LD_ENV_KEY,
+                    "segments": [{"key": seg.get("key"), "name": seg.get("name")} for seg in segments.get("items", [])]
+                }
+            else:
+                return {
+                    "error": f"LaunchDarkly API error: {response.status_code}",
+                    "message": response.text
+                }
+                
+    except Exception as e:
+        return {
+            "error": "Failed to fetch segments",
+            "message": str(e)
+        }
+
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
@@ -135,6 +203,7 @@ async def root():
         "version": "1.0.0",
         "endpoints": {
             "sync": "/api/snowflake-sync",
+            "segments": "/api/segments",
             "health": "/health"
         }
     }
