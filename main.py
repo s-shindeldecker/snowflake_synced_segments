@@ -202,7 +202,7 @@ async def root():
     """Root endpoint with API information"""
     return {
         "message": "Snowflake → LaunchDarkly Sync API",
-        "version": "1.0.0",
+        "version": app.version,
         "endpoints": {
             "sync": "/api/snowflake-sync",
             "segments": "/api/segments",
