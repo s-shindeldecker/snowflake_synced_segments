@@ -19,7 +19,6 @@ app = FastAPI(title="Snowflake → LaunchDarkly Sync API", version="1.0.0")
 LD_API_KEY = os.getenv("LD_API_KEY")
 LD_PROJECT_KEY = os.getenv("LD_PROJECT_KEY")
 LD_ENV_KEY = os.getenv("LD_ENV_KEY")
-LD_SEGMENT_KEY = os.getenv("LD_SEGMENT_KEY", "snowflake_test_segment")
 
 # Validate required environment variables (only in production)
 if not all([LD_API_KEY, LD_PROJECT_KEY, LD_ENV_KEY]):
@@ -57,8 +56,8 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
         if not isinstance(request.version, int) or request.version < 1:
             raise HTTPException(status_code=400, detail="version must be a positive integer")
         
-        # Use the segment key from environment or from request
-        segment_key = request.audience if request.audience != "snowflake_test_segment" else LD_SEGMENT_KEY
+        # Use the segment key from the request payload
+        segment_key = request.audience
         
         # Prepare LaunchDarkly API call
         ld_url = f"https://app.launchdarkly.com/api/v2/segments/{LD_PROJECT_KEY}/{LD_ENV_KEY}/{segment_key}/sync"
