@@ -71,7 +71,8 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
         
         headers = {
             "Authorization": f"api-key {LD_API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "LD-API-Version": "beta"
         }
         
         payload = {
@@ -169,7 +170,8 @@ async def list_segments():
         ld_url = f"https://app.launchdarkly.com/api/v2/segments/{LD_PROJECT_KEY}/{LD_ENV_KEY}"
         headers = {
             "Authorization": f"api-key {LD_API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "LD-API-Version": "beta"
         }
         
         async with httpx.AsyncClient(timeout=10.0) as client:
