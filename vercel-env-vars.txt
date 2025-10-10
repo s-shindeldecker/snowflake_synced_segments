@@ -1,0 +1,17 @@
+# LaunchDarkly Configuration for Vercel
+# Copy these values to your Vercel environment variables
+
+LD_API_KEY=api-73cc5b22-89aa-4827-956c-8da41ceeac5f
+LD_PROJECT_KEY=toggle-tax
+LD_ENV_KEY=production
+
+# Instructions:
+# 1. Go to Vercel Dashboard → Your Project → Settings → Environment Variables
+# 2. Add each variable above with its corresponding value
+# 3. Make sure to set them for Production environment
+# 4. Redeploy your project after adding the variables
+
+# For local development:
+# 1. Create a .env file in your project root
+# 2. Copy the LD_* variables above into the .env file
+# 3. The .env file is already in .gitignore so it won't be committed
