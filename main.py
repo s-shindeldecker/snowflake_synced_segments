@@ -78,6 +78,9 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
         # Check if we have valid credentials for LaunchDarkly
         if not all([LD_API_KEY, LD_PROJECT_KEY, LD_ENV_KEY]):
             logger.warning("Missing LaunchDarkly credentials - returning mock response")
+            logger.warning(f"LD_API_KEY: {'SET' if LD_API_KEY else 'NOT SET'}")
+            logger.warning(f"LD_PROJECT_KEY: {'SET' if LD_PROJECT_KEY else 'NOT SET'}")
+            logger.warning(f"LD_ENV_KEY: {'SET' if LD_ENV_KEY else 'NOT SET'}")
             return SyncResponse(
                 status="ok",
                 ld_response="Mock response - LaunchDarkly credentials not configured",
@@ -86,8 +89,15 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
             )
         
         # Make the API call to LaunchDarkly
+        logger.info(f"Making request to LaunchDarkly: {ld_url}")
+        logger.info(f"Headers: {headers}")
+        logger.info(f"Payload: {payload}")
+        
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(ld_url, json=payload, headers=headers)
+            
+            logger.info(f"LaunchDarkly response status: {response.status_code}")
+            logger.info(f"LaunchDarkly response text: {response.text}")
             
             if response.status_code == 200:
                 logger.info(f"Successfully synced segment {segment_key} to LaunchDarkly")
@@ -101,7 +111,7 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
                 logger.error(f"LaunchDarkly API error: {response.status_code} - {response.text}")
                 raise HTTPException(
                     status_code=500, 
-                    detail=f"LaunchDarkly API error: {response.status_code}"
+                    detail=f"LaunchDarkly API error: {response.status_code} - {response.text}"
                 )
                 
     except httpx.HTTPError as e:
