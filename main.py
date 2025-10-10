@@ -13,7 +13,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Snowflake → LaunchDarkly Sync API", version="1.0.1")
+app = FastAPI(title="Snowflake → LaunchDarkly Sync API", version="1.0.2")
 
 # Environment variables
 LD_API_KEY = os.getenv("LD_API_KEY")
