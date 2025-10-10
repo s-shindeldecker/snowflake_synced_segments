@@ -1,0 +1,12 @@
+# Vercel Environment Variables Template
+# Copy these to your Vercel project settings
+
+LD_API_KEY=your_launchdarkly_api_key_here
+LD_PROJECT_KEY=your_project_key_here
+LD_ENV_KEY=your_environment_key_here
+
+# Instructions:
+# 1. Go to Vercel Dashboard → Your Project → Settings → Environment Variables
+# 2. Add each variable above with your actual values
+# 3. Set them for Production environment
+# 4. Redeploy your project after adding the variables
