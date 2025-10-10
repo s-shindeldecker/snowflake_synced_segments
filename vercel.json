@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "main.py"
+    }
+  ],
+  "env": {
+    "LD_API_KEY": "@ld_api_key",
+    "LD_PROJECT_KEY": "@ld_project_key",
+    "LD_ENV_KEY": "@ld_env_key",
+    "LD_SEGMENT_KEY": "@ld_segment_key"
+  }
+}
