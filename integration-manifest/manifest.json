@@ -1,0 +1,45 @@
+{
+  "name": "Snowflake",
+  "version": "1.0.0",
+  "overview": "Sync Snowflake data warehouse segments to LaunchDarkly for powerful feature targeting based on your data warehouse insights.",
+  "description": "The Snowflake integration enables you to automatically sync user segments from your Snowflake data warehouse to LaunchDarkly. Use your existing data warehouse queries and analytics to define audiences, then target them with feature flags in LaunchDarkly. This integration supports real-time updates, allowing you to dynamically control feature access based on your latest data insights.",
+  "author": "LaunchDarkly",
+  "supportEmail": "[email protected]",
+  "links": {
+    "site": "https://www.snowflake.com",
+    "launchDocsLink": "https://docs.launchdarkly.com/integrations/snowflake"
+  },
+  "categories": ["data-warehouse", "segments"],
+  "icons": {
+    "square": "assets/images/square.svg",
+    "horizontal": "assets/images/horizontal.svg"
+  },
+  "formVariables": [
+    {
+      "key": "clientSideId",
+      "name": "LaunchDarkly Client-side ID",
+      "description": "The client-side ID for the LaunchDarkly environment where segments will be synced. You can find this in your LaunchDarkly project settings under the environment configuration.",
+      "type": "string",
+      "isSecret": false,
+      "isOptional": false
+    }
+  ],
+  "capabilities": {
+    "syncedSegment": {
+      "requestParser": {
+        "environmentIdPath": "/environmentId",
+        "contextKindPath": "/contextKind",
+        "cohortIdPath": "/cohortId",
+        "cohortNamePath": "/cohortName",
+        "cohortUrlPath": "/cohortUrl",
+        "addMemberArrayPath": "/included",
+        "removeMemberArrayPath": "/excluded",
+        "memberArrayParser": {
+          "memberIdPath": "/contextKey"
+        },
+        "jsonResponseBody": "{\"status\":\"{{#if errorMessage}}error{{else}}success{{/if}}\",\"segmentKey\":\"{{segmentKey}}\",\"projectKey\":\"{{projectKey}}\",\"environmentKey\":\"{{environmentKey}}\"{{#if errorMessage}},\"error\":{\"message\":\"{{{errorMessage}}}\",\"code\":{{statusCode}}}{{/if}}}"
+      }
+    }
+  }
+}
+

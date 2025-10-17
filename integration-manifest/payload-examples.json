@@ -1,0 +1,163 @@
+{
+  "examples": [
+    {
+      "name": "Basic User Segment Sync",
+      "description": "Add users to a new segment",
+      "payload": {
+        "environmentId": "507f1f77bcf86cd799439011",
+        "contextKind": "user",
+        "cohortId": "premium-users",
+        "cohortName": "Premium Users",
+        "cohortUrl": "https://app.snowflake.com/myorg/worksheet/premium_users_query",
+        "included": [
+          {"contextKey": "user-123"},
+          {"contextKey": "user-456"},
+          {"contextKey": "user-789"}
+        ],
+        "excluded": []
+      }
+    },
+    {
+      "name": "Incremental Update",
+      "description": "Add new users and remove churned users",
+      "payload": {
+        "environmentId": "507f1f77bcf86cd799439011",
+        "contextKind": "user",
+        "cohortId": "premium-users",
+        "cohortName": "Premium Users",
+        "cohortUrl": "https://app.snowflake.com/myorg/worksheet/premium_users_query",
+        "included": [
+          {"contextKey": "user-999"},
+          {"contextKey": "user-888"}
+        ],
+        "excluded": [
+          {"contextKey": "user-123"}
+        ]
+      }
+    },
+    {
+      "name": "Organization Context",
+      "description": "Sync enterprise organizations",
+      "payload": {
+        "environmentId": "507f1f77bcf86cd799439011",
+        "contextKind": "organization",
+        "cohortId": "enterprise-orgs",
+        "cohortName": "Enterprise Organizations",
+        "cohortUrl": "https://app.snowflake.com/myorg/worksheet/enterprise_orgs",
+        "included": [
+          {"contextKey": "org-acme"},
+          {"contextKey": "org-globex"},
+          {"contextKey": "org-initech"}
+        ],
+        "excluded": []
+      }
+    },
+    {
+      "name": "Device Context",
+      "description": "Sync mobile devices for device-level targeting",
+      "payload": {
+        "environmentId": "507f1f77bcf86cd799439011",
+        "contextKind": "device",
+        "cohortId": "ios-devices",
+        "cohortName": "iOS Devices",
+        "cohortUrl": "https://app.snowflake.com/myorg/worksheet/ios_devices",
+        "included": [
+          {"contextKey": "device-abc123"},
+          {"contextKey": "device-def456"}
+        ],
+        "excluded": []
+      }
+    },
+    {
+      "name": "Large Batch Sync",
+      "description": "Sync a large number of users (batching example)",
+      "payload": {
+        "environmentId": "507f1f77bcf86cd799439011",
+        "contextKind": "user",
+        "cohortId": "active-users",
+        "cohortName": "Active Users (Last 30 Days)",
+        "cohortUrl": "https://app.snowflake.com/myorg/worksheet/active_users",
+        "included": [
+          {"contextKey": "user-001"},
+          {"contextKey": "user-002"},
+          {"contextKey": "user-003"},
+          {"contextKey": "user-004"},
+          {"contextKey": "user-005"}
+        ],
+        "excluded": []
+      },
+      "note": "For production, batch requests should contain up to 1000 contexts per included/excluded array"
+    },
+    {
+      "name": "Remove All Users",
+      "description": "Clear a segment by excluding all members",
+      "payload": {
+        "environmentId": "507f1f77bcf86cd799439011",
+        "contextKind": "user",
+        "cohortId": "beta-testers",
+        "cohortName": "Beta Testers",
+        "cohortUrl": "https://app.snowflake.com/myorg/worksheet/beta_testers",
+        "included": [],
+        "excluded": [
+          {"contextKey": "user-123"},
+          {"contextKey": "user-456"},
+          {"contextKey": "user-789"}
+        ]
+      }
+    },
+    {
+      "name": "Minimal Required Fields",
+      "description": "Minimum required fields (no optional fields)",
+      "payload": {
+        "environmentId": "507f1f77bcf86cd799439011",
+        "cohortId": "test-segment",
+        "cohortName": "Test Segment",
+        "included": [
+          {"contextKey": "user-test"}
+        ],
+        "excluded": []
+      },
+      "note": "contextKind defaults to 'user' if not specified, cohortUrl is optional"
+    }
+  ],
+  "expectedResponses": {
+    "success": {
+      "status": "success",
+      "segmentKey": "premium-users",
+      "projectKey": "my-project",
+      "environmentKey": "production"
+    },
+    "error_invalid_environment": {
+      "status": "error",
+      "segmentKey": "premium-users",
+      "projectKey": "my-project",
+      "environmentKey": "production",
+      "error": {
+        "message": "Environment not found or invalid client-side ID",
+        "code": 401
+      }
+    },
+    "error_malformed_payload": {
+      "status": "error",
+      "error": {
+        "message": "Invalid payload format: missing required field 'cohortId'",
+        "code": 400
+      }
+    },
+    "error_rate_limited": {
+      "status": "error",
+      "segmentKey": "premium-users",
+      "projectKey": "my-project",
+      "environmentKey": "production",
+      "error": {
+        "message": "Rate limit exceeded. Please retry after the time specified in X-Ratelimit-Reset header",
+        "code": 429
+      }
+    }
+  },
+  "snowflakeProcedureExample": {
+    "description": "Example Snowflake stored procedure that generates the correct payload format",
+    "sql": "CREATE OR REPLACE PROCEDURE SYNC_SEGMENT_TO_LAUNCHDARKLY(\n    SEGMENT_KEY VARCHAR,\n    SEGMENT_NAME VARCHAR,\n    ENVIRONMENT_ID VARCHAR,\n    LAUNCHDARKLY_WEBHOOK_URL VARCHAR,\n    CONTEXT_KIND VARCHAR DEFAULT 'user'\n)\nRETURNS VARCHAR\nLANGUAGE JAVASCRIPT\nAS\n$$\n    // Query to get users who should be included\n    var included_query = `\n        SELECT DISTINCT user_id \n        FROM analytics.user_segments \n        WHERE segment_name = '${SEGMENT_NAME}'\n          AND active = true\n    `;\n    \n    var included_stmt = snowflake.createStatement({sqlText: included_query});\n    var included_result = included_stmt.execute();\n    \n    var included_users = [];\n    while (included_result.next()) {\n        included_users.push({\n            \"contextKey\": included_result.getColumnValue(1)\n        });\n    }\n    \n    // Query to get users who should be excluded\n    var excluded_query = `\n        SELECT DISTINCT user_id \n        FROM analytics.user_segments \n        WHERE segment_name = '${SEGMENT_NAME}'\n          AND active = false\n          AND last_active < DATEADD(day, -30, CURRENT_DATE())\n    `;\n    \n    var excluded_stmt = snowflake.createStatement({sqlText: excluded_query});\n    var excluded_result = excluded_stmt.execute();\n    \n    var excluded_users = [];\n    while (excluded_result.next()) {\n        excluded_users.push({\n            \"contextKey\": excluded_result.getColumnValue(1)\n        });\n    }\n    \n    // Prepare the payload matching the integration format\n    var payload = {\n        \"environmentId\": ENVIRONMENT_ID,\n        \"contextKind\": CONTEXT_KIND,\n        \"cohortId\": SEGMENT_KEY,\n        \"cohortName\": SEGMENT_NAME,\n        \"cohortUrl\": \"https://app.snowflake.com/\" + CURRENT_ACCOUNT(),\n        \"included\": included_users,\n        \"excluded\": excluded_users\n    };\n    \n    // Send to LaunchDarkly\n    var http_request = snowflake.createStatement({\n        sqlText: `\n            SELECT PARSE_JSON(\n                SYSTEM$SEND_HTTP_POST_REQUEST(\n                    '${LAUNCHDARKLY_WEBHOOK_URL}',\n                    '${JSON.stringify(payload)}',\n                    {'Content-Type': 'application/json'}\n                )\n            )\n        `\n    });\n    \n    var result = http_request.execute();\n    result.next();\n    \n    return result.getColumnValue(1);\n$$;"
+  }
+}
+
