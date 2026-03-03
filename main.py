@@ -137,7 +137,7 @@ async def _sync_via_patch_endpoint(segment_key: str, request: SnowflakeSyncReque
     ld_url = f"https://app.launchdarkly.com/api/v2/segments/{LD_PROJECT_KEY}/{LD_ENV_KEY}/{segment_key}"
     headers = {
         "Authorization": f"{LD_API_KEY}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; domain-model=launchdarkly.semanticpatch",
         "LD-API-Version": "20240415",
     }
 
