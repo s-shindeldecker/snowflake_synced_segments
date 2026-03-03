@@ -20,6 +20,11 @@ LD_API_KEY = os.getenv("LD_API_KEY")
 LD_PROJECT_KEY = os.getenv("LD_PROJECT_KEY")
 LD_ENV_KEY = os.getenv("LD_ENV_KEY")
 
+# SYNC_MODE controls which LaunchDarkly API is used:
+#   "patch" (default) - PATCH semantic patch API for list-based big segments
+#   "sync"            - POST /sync endpoint for Integration Framework synced segments
+SYNC_MODE = os.getenv("SYNC_MODE", "patch").lower()
+
 # Validate required environment variables (only in production)
 if not all([LD_API_KEY, LD_PROJECT_KEY, LD_ENV_KEY]):
     logger.warning("Missing required environment variables: LD_API_KEY, LD_PROJECT_KEY, LD_ENV_KEY")
@@ -65,24 +70,9 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
             )
         
         # segment_key is already set from validation above
-        
-        # Prepare LaunchDarkly API call
-        ld_url = f"https://app.launchdarkly.com/api/v2/segments/{LD_PROJECT_KEY}/{LD_ENV_KEY}/{segment_key}/sync"
-        
-        headers = {
-            "Authorization": f"{LD_API_KEY}",
-            "Content-Type": "application/json",
-            "LD-API-Version": "beta"
-        }
-        
-        payload = {
-            "included": request.included,
-            "excluded": request.excluded,
-            "version": request.version
-        }
-        
-        logger.info(f"Syncing to LaunchDarkly: {segment_key} with {len(request.included)} included, {len(request.excluded)} excluded")
-        
+
+        logger.info(f"Syncing to LaunchDarkly (mode={SYNC_MODE}): {segment_key} with {len(request.included)} included, {len(request.excluded)} excluded")
+
         # Check if we have valid credentials for LaunchDarkly
         if not all([LD_API_KEY, LD_PROJECT_KEY, LD_ENV_KEY]):
             logger.warning("Missing LaunchDarkly credentials - returning mock response")
@@ -95,58 +85,137 @@ async def sync_snowflake_to_launchdarkly(request: SnowflakeSyncRequest) -> SyncR
                 count_included=len(request.included),
                 count_excluded=len(request.excluded)
             )
-        
-        # Make the API call to LaunchDarkly
-        logger.info(f"Making request to LaunchDarkly: {ld_url}")
-        logger.info(f"Headers: {headers}")
-        logger.info(f"Payload: {payload}")
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(ld_url, json=payload, headers=headers)
-            
-            logger.info(f"LaunchDarkly response status: {response.status_code}")
-            logger.info(f"LaunchDarkly response text: {response.text}")
-            
-            if response.status_code == 200:
-                logger.info(f"Successfully synced segment {segment_key} to LaunchDarkly")
-                return SyncResponse(
-                    status="ok",
-                    ld_response="Segment updated successfully",
-                    count_included=len(request.included),
-                    count_excluded=len(request.excluded)
-                )
-            elif response.status_code == 404:
-                logger.error(f"Segment not found: {segment_key}")
-                raise HTTPException(
-                    status_code=404, 
-                    detail=f"Segment '{segment_key}' not found in LaunchDarkly project '{LD_PROJECT_KEY}'"
-                )
-            elif response.status_code == 401:
-                logger.error(f"Unauthorized: Invalid API key or insufficient permissions")
-                raise HTTPException(
-                    status_code=401, 
-                    detail="Unauthorized: Invalid LaunchDarkly API key or insufficient permissions"
-                )
-            elif response.status_code == 403:
-                logger.error(f"Forbidden: API key lacks required permissions")
-                raise HTTPException(
-                    status_code=403, 
-                    detail="Forbidden: API key lacks required permissions for this operation"
-                )
-            else:
-                logger.error(f"LaunchDarkly API error: {response.status_code} - {response.text}")
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"LaunchDarkly API error: {response.status_code} - {response.text}"
-                )
+
+        if SYNC_MODE == "sync":
+            response = await _sync_via_sync_endpoint(segment_key, request)
+        else:
+            response = await _sync_via_patch_endpoint(segment_key, request)
+
+        return response
                 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error calling LaunchDarkly: {str(e)}")
         raise HTTPException(status_code=500, detail="Error communicating with LaunchDarkly")
-    
+
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+async def _sync_via_sync_endpoint(segment_key: str, request: SnowflakeSyncRequest) -> SyncResponse:
+    """
+    Integration Framework path: POST to /segments/{proj}/{env}/{key}/sync
+    Use when SYNC_MODE=sync (future, once the integration is approved).
+    """
+    ld_url = f"https://app.launchdarkly.com/api/v2/segments/{LD_PROJECT_KEY}/{LD_ENV_KEY}/{segment_key}/sync"
+    headers = {
+        "Authorization": f"{LD_API_KEY}",
+        "Content-Type": "application/json",
+        "LD-API-Version": "beta",
+    }
+    payload = {
+        "included": request.included,
+        "excluded": request.excluded,
+        "version": request.version,
+    }
+
+    logger.info(f"[sync mode] POST {ld_url}")
+    logger.info(f"[sync mode] Payload: {payload}")
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(ld_url, json=payload, headers=headers)
+
+    logger.info(f"[sync mode] Response {response.status_code}: {response.text}")
+    return _handle_ld_response(response, segment_key, request)
+
+
+async def _sync_via_patch_endpoint(segment_key: str, request: SnowflakeSyncRequest) -> SyncResponse:
+    """
+    Big-segment path: PATCH /segments/{proj}/{env}/{key} with semantic patch.
+    Use when SYNC_MODE=patch (default, works with list-based big segments).
+    """
+    ld_url = f"https://app.launchdarkly.com/api/v2/segments/{LD_PROJECT_KEY}/{LD_ENV_KEY}/{segment_key}"
+    headers = {
+        "Authorization": f"{LD_API_KEY}",
+        "Content-Type": "application/json",
+        "LD-API-Version": "20240415",
+    }
+
+    instructions = []
+    if request.included:
+        instructions.append({
+            "kind": "addIncludedTargets",
+            "contextKind": "user",
+            "values": request.included,
+        })
+    if request.excluded:
+        instructions.append({
+            "kind": "removeIncludedTargets",
+            "contextKind": "user",
+            "values": request.excluded,
+        })
+
+    if not instructions:
+        return SyncResponse(
+            status="ok",
+            ld_response="No changes to apply",
+            count_included=0,
+            count_excluded=0,
+        )
+
+    payload = {"instructions": instructions}
+
+    logger.info(f"[patch mode] PATCH {ld_url}")
+    logger.info(f"[patch mode] Payload: {payload}")
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.patch(ld_url, json=payload, headers=headers)
+
+    logger.info(f"[patch mode] Response {response.status_code}: {response.text}")
+    return _handle_ld_response(response, segment_key, request)
+
+
+def _handle_ld_response(response: httpx.Response, segment_key: str, request: SnowflakeSyncRequest) -> SyncResponse:
+    """Shared response handling for both sync modes."""
+    if response.status_code in (200, 204):
+        logger.info(f"Successfully synced segment {segment_key} to LaunchDarkly")
+        return SyncResponse(
+            status="ok",
+            ld_response="Segment updated successfully",
+            count_included=len(request.included),
+            count_excluded=len(request.excluded),
+        )
+    elif response.status_code == 404:
+        logger.error(f"Segment not found: {segment_key}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Segment '{segment_key}' not found in LaunchDarkly project '{LD_PROJECT_KEY}'",
+        )
+    elif response.status_code == 401:
+        logger.error("Unauthorized: Invalid API key or insufficient permissions")
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: Invalid LaunchDarkly API key or insufficient permissions",
+        )
+    elif response.status_code == 403:
+        logger.error("Forbidden: API key lacks required permissions")
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: API key lacks required permissions for this operation",
+        )
+    elif response.status_code == 409:
+        logger.error(f"Conflict: {response.text}")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Conflict updating segment '{segment_key}': {response.text}",
+        )
+    else:
+        logger.error(f"LaunchDarkly API error: {response.status_code} - {response.text}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"LaunchDarkly API error: {response.status_code} - {response.text}",
+        )
+
 
 @app.get("/health")
 async def health_check():
